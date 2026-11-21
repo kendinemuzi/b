@@ -1,0 +1,413 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<Module>
+<ModulePrefs title="classrsoomgoogle" />
+<Content type="html"><![CDATA[
+
+<!DOCTYPE html>
+<html lang="en-us">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
+<style>
+html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#000;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
+#unity-canvas{display:block;width:100%;height:100%;outline:none}
+#ld{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#000 url('https://cdn.jsdelivr.net/gh/schoolflashx/cfgazfa@1ff6c1306bae3e88a7eb5ffc0c9b5ba3ba6f330e/Images/background.jpg') center/cover no-repeat;color:#fff;font:14px Arial,sans-serif}
+#logo{max-width:60vw;max-height:35vh}
+#bar{width:280px;max-width:80vw;height:10px;margin-top:18px;background:rgba(0,0,0,.5);border:1px solid rgba(255,255,255,.4)}
+#fill{width:0;height:100%;background:#fff}
+#txt{margin-top:8px;text-shadow:0 1px 2px #000}
+</style>
+<script>
+(function () {
+    if (!('mediaSession' in navigator)) return;
+    const ms = navigator.mediaSession;
+    const px = new Proxy(ms, { set(t, p, v) { if (p === "playbackState" || p === "metadata") return true; return Reflect.set(t, p, v); } });
+    try { Object.defineProperty(navigator, "mediaSession", { get() { return px; }, configurable: false }); } catch (e) {}
+    ["play", "pause", "seekbackward", "seekforward", "previoustrack", "nexttrack", "stop"].forEach(a => { try { ms.setActionHandler(a, null); } catch (e) {} });
+})();
+</script>
+</head>
+<body>
+<canvas id="unity-canvas" tabindex="-1"></canvas>
+<div id="ld"><img id="logo" src="https://cdn.jsdelivr.net/gh/schoolflashx/cfgazfa@8d3e17cc67f79b5170ad099fd81201ade2184ad7/Images/logo.png" alt=""/><div id="bar"><div id="fill"></div></div><div id="txt">Loading 0%</div></div>
+<script>
+const BUILD_CDN = "https://cdn.jsdelivr.net/gh/schoolflashx/cfgazfa@8d3e17cc67f79b5170ad099fd81201ade2184ad7/Build/";
+const WASM_PARTS = [
+    BUILD_CDN + "48a119ce06052e24a90955cd4a29d351.wasm.br.part1",
+    BUILD_CDN + "48a119ce06052e24a90955cd4a29d351.wasm.br.part2",
+    BUILD_CDN + "48a119ce06052e24a90955cd4a29d351.wasm.br.part3",
+    BUILD_CDN + "48a119ce06052e24a90955cd4a29d351.wasm.br.part4"
+];
+const DATA_PARTS = [
+    BUILD_CDN + "ada96aa2ce4c7d783861a8190f126899.data.br.part1",
+    BUILD_CDN + "ada96aa2ce4c7d783861a8190f126899.data.br.part2",
+    BUILD_CDN + "ada96aa2ce4c7d783861a8190f126899.data.br.part3",
+    BUILD_CDN + "ada96aa2ce4c7d783861a8190f126899.data.br.part4"
+];
+const BROTLI_JS = "https://cdn.jsdelivr.net/npm/brotli-dec-wasm@2.3.2/pkg/brotli_dec_wasm.js";
+const config = {
+    dataUrl: "",
+    frameworkUrl: BUILD_CDN + "be1748f13ee01a3e97de9fcdaf924ce4.framework.js",
+    codeUrl: "",
+    streamingAssetsUrl: "https://cdn.jsdelivr.net/gh/schoolflashx/cfgazfa@8d3e17cc67f79b5170ad099fd81201ade2184ad7/StreamingAssets",
+    companyName: "Категория",
+    productName: "Симулятор вратаря",
+    productVersion: "1.0",
+    cacheControl: function () { return "no-store"; },
+    showBanner: function () {}
+};
+if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) config.devicePixelRatio = Math.min(window.devicePixelRatio, 2);
+
+const canvas = document.getElementById("unity-canvas");
+const ld = document.getElementById("ld"), txt = document.getElementById("txt"), fill = document.getElementById("fill");
+const NO_DATA = 'no data', SAVE_KEY = 'gk_save_v1', STATS_KEY = 'gk_stats_v1';
+let ygGameInstance = null, initGame = false;
+var cloudSaves = NO_DATA, statsSaves = NO_DATA, environmentData = NO_DATA, playerData = NO_DATA, paymentsData = NO_DATA, gameLabelData = 'false', flasgsData = NO_DATA;
+
+function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+function quiet(f) { return function () { try { const r = f.apply(this, arguments); if (r && r.catch) r.catch(() => {}); return r; } catch (e) {} }; }
+Element.prototype.requestPointerLock = quiet(Element.prototype.requestPointerLock);
+window.addEventListener('unhandledrejection', e => {
+    const m = String(e.reason && (e.reason.message || e.reason));
+    if (/database|IndexedDB|pointer ?lock|fullscreen/i.test(m)) { e.preventDefault(); e.stopImmediatePropagation(); }
+});
+if (Element.prototype.requestFullscreen) Element.prototype.requestFullscreen = quiet(Element.prototype.requestFullscreen);
+
+const isMob = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+const ok = v => Promise.resolve(v);
+const noop = () => {};
+function soft(o) { return new Proxy(o, { get(t, k) { if (k in t || typeof k === 'symbol' || k === 'then') return t[k]; return () => ok(); } }); }
+function uid() { let u = lsGet('gk_uid'); if (!u) { u = 'u' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); lsSet('gk_uid', u); } return u; }
+var player = soft({
+    isAuthorized: () => false, getName: () => '', getUniqueID: uid, getPhoto: () => '', getPayingStatus: () => 'unknown', getMode: () => 'lite', signature: '',
+    getData: () => { const d = lsGet(SAVE_KEY); return ok(d ? { saves: [d] } : {}); },
+    setData: o => { if (o && o.saves && typeof o.saves[0] === 'string') lsSet(SAVE_KEY, o.saves[0]); return ok(true); },
+    getStats: () => ok(JSON.parse(lsGet(STATS_KEY) || '{}')),
+    setStats: o => { SetStats(JSON.stringify(o || {})); return ok(true); },
+    incrementStats: o => { const c = JSON.parse(lsGet(STATS_KEY) || '{}'); for (const k in o) c[k] = (c[k] || 0) + o[k]; lsSet(STATS_KEY, JSON.stringify(c)); return ok(c); },
+    getIDsPerGame: () => ok([])
+});
+const lb = soft({
+    setScore: () => ok(), getPlayerEntry: () => Promise.reject({ code: 'LEADERBOARD_PLAYER_NOT_PRESENT' }),
+    getEntries: () => ok({ leaderboard: {}, ranges: [], userRank: 0, entries: [] }),
+    getDescription: n => ok({ appID: '0', default: false, name: n, title: { en: '' }, description: { invert_sort_order: false, type: 'numeric', score_format: { options: { decimal_offset: 0 } } } })
+});
+var payments = soft({ getCatalog: () => ok([]), getPurchases: () => { const a = []; a.signature = ''; return ok(a); }, purchase: () => Promise.reject(new Error('unavailable')), consumePurchase: () => ok() });
+var ysdk = soft({
+    environment: { app: { id: '0' }, browser: { lang: 'en' }, i18n: { lang: 'en', tld: 'com' }, payload: '' },
+    deviceInfo: { type: isMob ? 'mobile' : 'desktop', isMobile: () => isMob, isDesktop: () => !isMob, isTablet: () => false, isTV: () => false },
+    screen: { fullscreen: { status: 'off', request: () => ok(), exit: () => ok() } },
+    features: {
+        LoadingAPI: { ready: noop },
+        GameplayAPI: { start: noop, stop: noop },
+        GamesAPI: { getAllGames: () => ok({ games: [], developerURL: '' }), getGameByID: () => ok({ isAvailable: false }) },
+        PluginEngineDataReporterAPI: { report: noop }
+    },
+    adv: soft({
+        showFullscreenAdv: o => { const c = (o && o.callbacks) || {}; setTimeout(() => { c.onClose && c.onClose(false); }, 0); },
+        showRewardedVideo: o => { const c = (o && o.callbacks) || {}; setTimeout(() => { c.onOpen && c.onOpen(); c.onRewarded && c.onRewarded(); c.onClose && c.onClose(); }, 0); },
+        showBannerAdv: () => ok({ stickyAdvIsShowing: false }), hideBannerAdv: () => ok({ stickyAdvIsShowing: false }), getBannerAdvStatus: () => ok({ stickyAdvIsShowing: false })
+    }),
+    auth: { openAuthDialog: () => Promise.reject(new Error('unavailable')) },
+    shortcut: { canShowPrompt: () => ok({ canShow: false }), showPrompt: () => ok({ outcome: 'rejected' }) },
+    feedback: { canReview: () => ok({ value: false, reason: 'UNKNOWN' }), requestReview: () => ok({ feedbackSent: false }) },
+    clipboard: { writeText: t => { try { return navigator.clipboard.writeText(t); } catch (e) { return ok(); } } },
+    leaderboards: lb,
+    getLeaderboards: () => ok(lb),
+    getPayments: () => ok(payments),
+    payments: payments,
+    getPlayer: () => ok(player),
+    getFlags: () => ok({}),
+    isAvailableMethod: () => ok(false),
+    serverTime: () => Date.now(),
+    on: noop, off: noop, dispatchEvent: noop
+});
+window.YaGames = { init: () => ok(ysdk) };
+
+document.addEventListener('contextmenu', e => e.preventDefault());
+function FocusGame() { window.focus(); canvas.focus({ preventScroll: true }); }
+window.addEventListener('pointerdown', FocusGame);
+window.addEventListener('touchstart', FocusGame);
+document.addEventListener('visibilitychange', () => { if (initGame) YG2Instance('SetFocusWindowGame', document.hidden ? 'false' : 'true'); });
+
+function YG2Instance(method, arg) {
+    if (!ygGameInstance) return;
+    const send = () => { try { arg === undefined ? ygGameInstance.SendMessage('YG2Instance', method) : ygGameInstance.SendMessage('YG2Instance', method, arg); } catch (e) {} };
+    initGame ? send() : setTimeout(send, 100);
+}
+function LogStyledMessage() {}
+function InitGame() { initGame = true; }
+function SaveCloud(d) { if (typeof d === 'string') lsSet(SAVE_KEY, d); }
+function LoadCloud() { const d = lsGet(SAVE_KEY); cloudSaves = d ? JSON.stringify([d]) : NO_DATA; YG2Instance('SetLoadSaves', cloudSaves); return ok(cloudSaves); }
+function GetStats() { statsSaves = lsGet(STATS_KEY) || '{}'; YG2Instance('ReceiveStats', statsSaves); return ok(statsSaves); }
+function SetStats(j) { try { lsSet(STATS_KEY, JSON.stringify(Object.assign(JSON.parse(lsGet(STATS_KEY) || '{}'), JSON.parse(j)))); } catch (e) {} }
+function RewardedAdvShow(id) { YG2Instance('OpenRewardedAdv'); setTimeout(() => { YG2Instance('RewardAdv', id); YG2Instance('CloseRewardedAdv'); FocusGame(); }, 50); }
+function InterAdvShow() {}
+function InitPayments() {
+    paymentsData = JSON.stringify({ id: [], title: [], description: [], imageURI: [], price: [], priceValue: [], priceCurrencyCode: [], currencyImageURL: [], consumed: [], language: 'en' });
+    YG2Instance('PaymentsEntries', paymentsData);
+    return ok(paymentsData);
+}
+function BuyPayments(id) { YG2Instance('OnPurchaseFailed', id); }
+function ConsumePurchase() {}
+function ConsumePurchases() {}
+function SetLeaderboard() {}
+function GetLeaderboard(name) { YG2Instance('LeaderboardEntries', JSON.stringify({ technoName: name, isDefault: false, isInvertSortOrder: false, decimalOffset: 0, type: 'numeric', entries: NO_DATA, ranks: [], photos: [], names: [], scores: [], uniqueIDs: [], extraDataArray: [] })); }
+function EntriesLB() { return { entries: NO_DATA, ranks: [], photos: [], names: [], scores: [], uniqueIDs: [], extraDataArray: [] }; }
+function InitGameLabel() { return ok('false'); }
+function GameLabelShowDialog() { YG2Instance('OnGameLabelFail'); }
+function GetFlags() { flasgsData = JSON.stringify({ names: [], values: [] }); return ok(flasgsData); }
+function OpenAuthDialog() {}
+function NotAuthorized() { return JSON.stringify({ playerAuth: "rejected", playerName: "unauthorized", playerId: "unauthorized", playerPhoto: NO_DATA, payingStatus: "unknown" }); }
+function InitPlayer() { playerData = NotAuthorized(); YG2Instance('SetAuth', playerData); return ok(playerData); }
+function RequestingEnvironmentData() {
+    environmentData = JSON.stringify({ language: 'en', domain: 'com', deviceType: isMob ? 'mobile' : 'desktop', isMobile: isMob, isDesktop: !isMob, isTablet: false, isTV: false, appID: '0', browserLang: 'en', payload: '', platform: navigator.platform || '', browser: 'Chrome' });
+    YG2Instance('SetEnvirData', environmentData);
+    return ok(environmentData);
+}
+RequestingEnvironmentData(); InitPlayer(); LoadCloud(); GetStats(); InitPayments(); GetFlags();
+
+const EST_TOTAL = (27.3 + 28.8) * 1048576;
+let got = 0;
+function show(p) { const v = Math.min(100, Math.round(p * 100)); fill.style.width = v + '%'; txt.textContent = 'Loading ' + v + '%'; }
+function addBytes(n) { got += n; show(Math.min(got / EST_TOTAL, 1) * 0.85); }
+
+async function fetchPart(url) {
+    for (let a = 0; a < 4; a++) {
+        let seen = 0;
+        try {
+            const r = await fetch(a ? url + '?r=' + Date.now() : url);
+            if (!r.ok) throw new Error(r.status);
+            const rd = r.body.getReader(), ch = [];
+            for (;;) { const { done, value } = await rd.read(); if (done) break; ch.push(value); seen += value.length; addBytes(value.length); }
+            const out = new Uint8Array(seen); let o = 0;
+            for (const c of ch) { out.set(c, o); o += c.length; }
+            return out;
+        } catch (e) { got -= seen; await new Promise(r => setTimeout(r, 1000 * (a + 1))); }
+    }
+    throw new Error('download failed');
+}
+
+function pool(urls, n) {
+    const res = urls.map(() => { let s, j; const p = new Promise((a, b) => { s = a; j = b; }); return { p, s, j }; });
+    let i = 0;
+    const next = () => { if (i >= urls.length) return; const k = i++; fetchPart(urls[k]).then(v => { res[k].s(v); next(); }, e => { res[k].j(e); next(); }); };
+    for (let k = 0; k < n; k++) next();
+    return res.map(r => r.p);
+}
+
+let brotliMod = null;
+async function brotli() { if (!brotliMod) { brotliMod = await import(BROTLI_JS); await brotliMod.default(); } return brotliMod; }
+
+async function joinParts(promises, isRaw, type) {
+    const first = await promises[0];
+    const out = [];
+    if (isRaw(first)) {
+        out.push(first);
+        for (let k = 1; k < promises.length; k++) out.push(await promises[k]);
+    } else {
+        const b = await brotli();
+        const ds = new b.DecompressStream();
+        for (let k = 0; k < promises.length; k++) {
+            const part = k ? await promises[k] : first;
+            let off = 0, code;
+            do {
+                const r = ds.decompress(part.subarray(off), 1 << 21);
+                out.push(r.buf); off += r.input_offset; code = r.code;
+                r.free && r.free();
+            } while (code === b.BrotliStreamResultCode.NeedsMoreOutput || (code === b.BrotliStreamResultCode.NeedsMoreInput && off < part.length));
+            promises[k] = null;
+        }
+        ds.free && ds.free();
+    }
+    return URL.createObjectURL(new Blob(out, { type: type }));
+}
+
+const isWasm = u => u[0] === 0 && u[1] === 0x61 && u[2] === 0x73 && u[3] === 0x6d;
+const isData = u => String.fromCharCode.apply(null, u.subarray(0, 12)) === 'UnityWebData';
+
+function fail() { txt.textContent = 'Load error, refresh the page'; }
+
+const s = document.createElement("script");
+s.src = BUILD_CDN + "333.loader.js";
+s.onerror = fail;
+s.onload = async () => {
+    try {
+        const all = pool(WASM_PARTS.concat(DATA_PARTS), 3);
+        config.codeUrl = await joinParts(all.slice(0, WASM_PARTS.length), isWasm, 'application/wasm');
+        config.dataUrl = await joinParts(all.slice(WASM_PARTS.length), isData, 'application/octet-stream');
+        show(0.85);
+        const u = await createUnityInstance(canvas, config, p => show(0.85 + p * 0.15));
+        ygGameInstance = u;
+        show(1);
+        ld.remove();
+        FocusGame();
+    } catch (e) { fail(); }
+};
+document.body.appendChild(s);
+</script>
+<!-- Sticky Bottom Center Ad (728x90) with Smooth Slide-Out and Reappearance -->
+<style>
+  /* Container: Bottom center, fixed, with overflow hidden */
+  #ad-container {
+    position: fixed;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(728px, calc(100% - 20px)); /* 728px, 10px margin on mobile */
+    height: 90px;
+    background: rgba(0, 0, 0, 0.90);
+    display: none;
+    z-index: 99999;
+    border-radius: 0; /* Sharp corners */
+    overflow: hidden;
+    box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.45);
+    box-sizing: border-box;
+    transition: transform 0.5s ease-in-out; /* Smooth slide-in/out animation */
+  }
+
+  /* Slide-out animation */
+  #ad-container.hidden {
+    transform: translate(-50%, 100%); /* Slide down out of view */
+  }
+
+  #ad-iframe {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 745px; /* Updated width */
+    height: 90px; /* Updated height */
+    border: 0;
+    display: block;
+    overflow: hidden;
+    pointer-events: auto;
+    box-sizing: content-box;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  
+  #ad-iframe::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
+  /* Close button with arrow */
+  #close-ad {
+    position: absolute;
+    top: 6px;
+    right: 8px;
+    background: #ff4d4d;
+    color: #fff;
+    border: none;
+    padding: 5px 9px;
+    font-size: 13px;
+    border-radius: 4px;
+    cursor: not-allowed;
+    opacity: 0.72;
+    z-index: 100000;
+    display: flex;
+    align-items: center;
+  }
+  #close-ad.enabled {
+    cursor: pointer;
+    opacity: 1;
+  }
+  #close-ad::before {
+    content: '↓'; /* Down arrow for bottom ad */
+    margin-right: 4px;
+  }
+
+  /* Right mask for scrollbar */
+  #ad-right-mask {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 12px;
+    height: 100%;
+    pointer-events: none;
+    background: linear-gradient(to right, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.9));
+    z-index: 99999;
+  }
+
+  /* Mobile adjustments */
+  @media (max-width: 440px) {
+    #ad-container {
+      width: calc(100% - 12px);
+      left: 50%;
+      transform: translateX(-50%);
+      border-radius: 0; /* Sharp corners on mobile */
+    }
+    #ad-iframe {
+      width: 728px;
+    }
+  }
+</style>
+
+<div id="ad-container" aria-hidden="true" role="dialog" aria-label="Advertisement">
+  <iframe
+    id="ad-iframe"
+    src="https://script.google.com/macros/s/AKfycbzNG4z_PlG6Ke_bX5wSPKK2uBRB3IY9ouVzqM1shucYhSTvsJWRmyMyZaaC2z5S3ADN/exec"
+    width="768px"
+    height="95px"
+    scrolling="no"
+    frameborder="0"
+    sandbox="allow-scripts allow-popups allow-same-origin"
+  ></iframe>
+  <button id="close-ad" disabled>Close (12)</button>
+  <div id="ad-right-mask"></div>
+</div>
+
+<script>
+  (function () {
+    const showDelay = 2000; // 2 seconds delay before first show
+    const countdownStart = 12; // 12 seconds countdown
+    const reappearDelay = 150000; // 25 seconds before reappearance
+    const adContainer = document.getElementById('ad-container');
+    const closeBtn = document.getElementById('close-ad');
+
+    function showAd() {
+      // Show ad with smooth slide-in
+      adContainer.style.display = 'block';
+      adContainer.classList.remove('hidden');
+      adContainer.setAttribute('aria-hidden', 'false');
+
+      // Start countdown
+      let timeLeft = countdownStart;
+      closeBtn.textContent = `Close (${timeLeft})`;
+      closeBtn.disabled = true;
+      closeBtn.classList.remove('enabled');
+
+      const t = setInterval(() => {
+        timeLeft--;
+        if (timeLeft > 0) {
+          closeBtn.textContent = `Close (${timeLeft})`;
+        } else {
+          clearInterval(t);
+          closeBtn.disabled = false;
+          closeBtn.classList.add('enabled');
+          closeBtn.textContent = 'Close ↓';
+        }
+      }, 1000);
+    }
+
+    // Initial ad show
+    setTimeout(showAd, showDelay);
+
+    // Close with animation and schedule reappearance
+    closeBtn.addEventListener('click', () => {
+      if (closeBtn.disabled) return;
+      adContainer.classList.add('hidden');
+      adContainer.setAttribute('aria-hidden', 'true');
+      // Schedule reappearance without removing or reloading iframe
+      setTimeout(showAd, reappearDelay);
+    });
+  })();
+</script>
+</body>
+</html>
+
+]]></Content>
+</Module>
